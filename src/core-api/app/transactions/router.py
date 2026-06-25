@@ -124,7 +124,7 @@ async def request_refund(
     )
     await db.execute(
         text("""INSERT INTO ops.notifications (user_id, type, title, body, metadata)
-                VALUES (:uid, 'refund', 'Refund Requested', :body, :meta::jsonb)"""),
+                VALUES (:uid, 'refund', 'Refund Requested', :body, CAST(:meta AS jsonb))"""),
         {
             "uid": current_user.user_id,
             "body": f"Refund of {refund_amount} {tx.currency} is being reviewed",
@@ -172,7 +172,7 @@ async def approve_refund(
     )
     await db.execute(
         text("""INSERT INTO ops.notifications (user_id, type, title, body, metadata)
-                VALUES (:uid, 'refund', 'Refund Approved ✓', :body, :meta::jsonb)"""),
+                VALUES (:uid, 'refund', 'Refund Approved ✓', :body, CAST(:meta AS jsonb))"""),
         {
             "uid": refund.requester_id,
             "body": f"Your refund of {refund.amount} {refund.currency} has been approved",
@@ -226,11 +226,11 @@ async def raise_dispute(
     await db.execute(
         text("""INSERT INTO ledger.disputes
                 (id, transaction_id, raised_by, reason, evidence, priority)
-                VALUES (:id, :tid, :uid, :reason, :evidence::jsonb, :priority)"""),
+                VALUES (:id, :tid, :uid, :reason, :evidence`, :priority)"""),
         {
             "id": dispute_id, "tid": payload["transaction_id"],
             "uid": current_user.user_id, "reason": payload["reason"],
-            "evidence": json.dumps(payload.get("evidence") or []),
+            "evidence": json.dumps(payload.get('evidence') or []),
             "priority": priority,
         },
     )
@@ -239,7 +239,7 @@ async def raise_dispute(
     await db.execute(
         text("""INSERT INTO ops.tickets
                 (user_id, transaction_id, subject, description, category, priority)
-                VALUES (:uid, :tid, :subject, :desc, 'dispute', :priority)"""),
+                VALUES (:uid, :tid, :subject, :desc, 'dispute'::ops.ticket_category, :priority::ops.ticket_priority)"""),
         {
             "uid": current_user.user_id, "tid": payload["transaction_id"],
             "subject": f"Dispute: {payload['reason'][:80]}",
