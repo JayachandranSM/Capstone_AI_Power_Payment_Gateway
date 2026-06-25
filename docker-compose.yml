@@ -1,0 +1,104 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: pg_gateway
+    environment:
+      POSTGRES_DB: payment_gateway
+      POSTGRES_USER: pguser
+      POSTGRES_PASSWORD: pgpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/01_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pguser -d payment_gateway"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_gateway
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  core-api:
+    build:
+      context: ./src/core-api
+      dockerfile: Dockerfile
+    container_name: core_api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src/core-api:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ai-service:
+    build:
+      context: ./src/ai-service
+      dockerfile: Dockerfile
+    container_name: ai_service
+    env_file: .env
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src/ai-service:/app
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - core-api
+      - ai-service
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_gateway
+    ports:
+      - "80:80"
+    volumes:
+      - ./scripts/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - core-api
+      - ai-service
+      - frontend
+
+volumes:
+  pg_data:
+  redis_data:
