@@ -83,9 +83,17 @@ export default function LoginPage() {
               {isLoading ? <><Loader2 className="animate-spin" size={16} />Signing in...</> : 'Sign In'}
             </button>
           </form>
-          <p className="text-center text-sm text-slate-400 mt-4">
-            No account? <Link to="/signup" className="text-blue-400 hover:underline">Sign up</Link>
-          </p>
+          <div className="text-center mt-4 space-y-2">
+            <p className="text-sm text-slate-400">
+              <button type="button" onClick={() => navigate('/forgot-password')}
+                className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
+                Forgot password?
+              </button>
+            </p>
+            <p className="text-sm text-slate-400">
+              No account? <Link to="/signup" className="text-blue-400 hover:underline">Sign up</Link>
+            </p>
+          </div>
         </div>
 
         <div className="mt-6">

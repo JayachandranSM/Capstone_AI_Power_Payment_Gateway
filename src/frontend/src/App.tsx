@@ -4,7 +4,8 @@ import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from './store/authStore'
 
 import LoginPage         from './pages/LoginPage'
-import SignupPage        from './pages/SignupPage'
+import SignupPage           from './pages/SignupPage'
+import ForgotPasswordPage   from './pages/ForgotPasswordPage'
 
 import CustomerLayout    from './components/customer/CustomerLayout'
 import CustomerDashboard from './components/customer/Dashboard'
@@ -46,6 +47,7 @@ export default function App() {
       <Routes>
         <Route path="/login"  element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
         <Route path="/" element={
           !token ? <Navigate to="/login" replace /> :

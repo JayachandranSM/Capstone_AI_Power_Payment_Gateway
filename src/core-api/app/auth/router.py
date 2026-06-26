@@ -93,7 +93,7 @@ async def login(payload: dict, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=403, detail="MFA code required",
                                 headers={"X-MFA-Required": "true"})
         totp = pyotp.TOTP(user.mfa_secret)
-        if not totp.verify(payload["totp_code"], valid_window=1):
+        if not totp.verify(payload["totp_code"], valid_window=3):
             raise HTTPException(status_code=401, detail="Invalid MFA code")
 
     access_token = create_access_token(user.id, user.role)
@@ -250,7 +250,7 @@ async def verify_mfa(payload: dict, current_user: CurrentUser = Depends(require_
         raise HTTPException(status_code=400, detail="MFA setup not initiated")
 
     totp = pyotp.TOTP(user.mfa_secret)
-    if not totp.verify(payload["totp_code"], valid_window=1):
+    if not totp.verify(payload["totp_code"], valid_window=3):
         raise HTTPException(status_code=400, detail="Invalid TOTP code")
 
     await db.execute(
