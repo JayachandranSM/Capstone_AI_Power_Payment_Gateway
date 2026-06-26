@@ -103,6 +103,16 @@ async def merchant_settlements(
         text("SELECT * FROM ledger.settlements WHERE merchant_id=:mid ORDER BY created_at DESC LIMIT 20"),
         {"mid": merchant.id},
     )
+    # Also update existing p2p transactions to set merchant_id for Raj's UPI
+    await db.execute(
+        text("""UPDATE ledger.transactions
+                SET merchant_id = :mid, type = 'merchant_payment'
+                WHERE receiver_id = :uid
+                AND upi_handle_receiver IS NOT NULL
+                AND merchant_id IS NULL"""),
+        {"mid": merchant.id, "uid": current_user.user_id},
+    )
+    await db.commit()
     return [dict(r._mapping) for r in rows.fetchall()]
 
 # ── Admin ─────────────────────────────────────────────────────

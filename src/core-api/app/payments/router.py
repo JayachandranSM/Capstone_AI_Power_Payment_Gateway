@@ -116,6 +116,8 @@ async def process_payment(
     receiver_id  = None
     upi_receiver = None
 
+    merchant_id_resolved = None
+
     if payload.get("receiver_upi"):
         row = await db.execute(
             text("SELECT user_id FROM core.upi_handles WHERE handle=:h AND is_active=TRUE"),
@@ -127,6 +129,15 @@ async def process_payment(
         receiver_id  = handle.user_id
         upi_receiver = payload["receiver_upi"]
 
+        # Check if this UPI handle belongs to a merchant — if so, set merchant_id
+        merchant_row = await db.execute(
+            text("SELECT id FROM core.merchants WHERE user_id=:uid AND is_active=TRUE"),
+            {"uid": receiver_id},
+        )
+        merchant_rec = merchant_row.fetchone()
+        if merchant_rec:
+            merchant_id_resolved = merchant_rec.id
+
     if payload.get("merchant_id"):
         row = await db.execute(
             text("SELECT user_id FROM core.merchants WHERE id=:mid AND is_active=TRUE"),
@@ -136,6 +147,7 @@ async def process_payment(
         if not merchant:
             raise HTTPException(status_code=404, detail="Merchant not found")
         receiver_id = merchant.user_id
+        merchant_id_resolved = payload["merchant_id"]
 
     if not receiver_id:
         raise HTTPException(status_code=400, detail="receiver_upi or merchant_id required")
@@ -174,7 +186,7 @@ async def process_payment(
         tx_status = "flagged"
         failure_reason = "Flagged by fraud detection system"
 
-    tx_type = "merchant_payment" if payload.get("merchant_id") else "p2p"
+    tx_type = "merchant_payment" if (merchant_id_resolved or payload.get("merchant_id")) else "p2p"
 
     sender_upi_row = await db.execute(
         text("SELECT handle FROM core.upi_handles WHERE user_id=:uid AND is_primary=TRUE"),
@@ -207,7 +219,7 @@ async def process_payment(
             "idem":           idem_key,
             "sender":         current_user.user_id,
             "receiver":       receiver_id,
-            "merchant":       payload.get("merchant_id"),
+            "merchant":       merchant_id_resolved or payload.get("merchant_id"),
             "amount":         amount,
             "currency":       currency,
             "amount_usd":     amount_usd,
