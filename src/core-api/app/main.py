@@ -7,6 +7,7 @@ from app.auth.router import router as auth_router
 from app.config import get_settings
 from app.health.router import admin_router, health_router, merchant_router
 from app.payments.router import router as payment_router
+from app.payments.sandbox_router import router as sandbox_router
 from app.transactions.router import (
     dispute_router, notif_router, refund_router, tx_router, wallet_router,
 )
@@ -68,6 +69,7 @@ app.include_router(wallet_router,   prefix=API)
 app.include_router(notif_router,    prefix=API)
 app.include_router(merchant_router, prefix=API)
 app.include_router(admin_router,    prefix=API)
+app.include_router(sandbox_router,  prefix=API)
 
 @app.get("/")
 async def root():

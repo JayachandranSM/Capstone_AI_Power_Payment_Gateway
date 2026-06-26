@@ -26,6 +26,7 @@ import FraudQueue        from './components/admin/FraudQueue'
 import DisputeManager    from './components/admin/DisputeManager'
 import NLPLookup         from './components/admin/NLPLookup'
 import UserManager       from './components/admin/UserManager'
+import Analytics         from './components/admin/Analytics'
 
 function RoleRoute({ allowed, children }: { allowed: string[]; children: React.ReactNode }) {
   const role = useAuthStore(s => s.role)
@@ -74,6 +75,7 @@ export default function App() {
           <Route path="disputes"   element={<DisputeManager />} />
           <Route path="nlp"        element={<NLPLookup />} />
           <Route path="users"      element={<UserManager />} />
+          <Route path="analytics"  element={<Analytics />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
