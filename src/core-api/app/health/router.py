@@ -248,6 +248,126 @@ async def resolve_ticket(
     await db.commit()
     return {"message": "Ticket resolved"}
 
+@admin_router.patch("/users/{user_id}/toggle-status")
+async def toggle_user_status(
+    user_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Activate or deactivate a user account."""
+    row = await db.execute(
+        text("SELECT id, is_active, full_name FROM core.users WHERE id = :uid"),
+        {"uid": user_id},
+    )
+    user = row.fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    new_status = not user.is_active
+    await db.execute(
+        text("UPDATE core.users SET is_active = :status, updated_at = NOW() WHERE id = :uid"),
+        {"status": new_status, "uid": user_id},
+    )
+    await db.execute(
+        text("""INSERT INTO ops.audit_log (actor_id, action, entity_type, entity_id, new_values)
+                VALUES (:actor, :action, 'user', :uid, CAST(:vals AS jsonb))"""),
+        {
+            "actor":  current_user.user_id,
+            "action": "user_activated" if new_status else "user_deactivated",
+            "uid":    user_id,
+            "vals":   f'{{"is_active": {str(new_status).lower()}, "user_name": "{user.full_name}"}}',
+        },
+    )
+    await db.commit()
+    return {"user_id": str(user_id), "is_active": new_status,
+            "message": f"User {'activated' if new_status else 'deactivated'} successfully"}
+
+
+@admin_router.patch("/users/{user_id}/kyc")
+async def update_kyc_status(
+    user_id: uuid.UUID,
+    payload: dict,
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update KYC verification status."""
+    kyc_status = payload.get("kyc_status", "verified")
+    if kyc_status not in ("pending", "verified", "failed", "expired"):
+        raise HTTPException(status_code=400, detail="Invalid KYC status")
+
+    await db.execute(
+        text("UPDATE core.users SET kyc_status = :kyc, updated_at = NOW() WHERE id = :uid"),
+        {"kyc": kyc_status, "uid": user_id},
+    )
+    await db.execute(
+        text("""INSERT INTO ops.audit_log (actor_id, action, entity_type, entity_id, new_values)
+                VALUES (:actor, 'kyc_status_updated', 'user', :uid, CAST(:vals AS jsonb))"""),
+        {
+            "actor": current_user.user_id,
+            "uid":   user_id,
+            "vals":  f'{{"kyc_status": "{kyc_status}"}}',
+        },
+    )
+    await db.commit()
+    return {"user_id": str(user_id), "kyc_status": kyc_status,
+            "message": f"KYC status updated to {kyc_status}"}
+
+
+@admin_router.get("/users/{user_id}/summary")
+async def get_user_summary(
+    user_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get full user summary with wallets, transactions, disputes."""
+    user_row = await db.execute(
+        text("SELECT * FROM core.users WHERE id = :uid"), {"uid": user_id}
+    )
+    user = user_row.fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    wallets_row = await db.execute(
+        text("SELECT * FROM core.wallets WHERE user_id = :uid"), {"uid": user_id}
+    )
+    wallets = [dict(r._mapping) for r in wallets_row.fetchall()]
+
+    tx_row = await db.execute(
+        text("""SELECT COUNT(*) as total,
+                SUM(CASE WHEN status='success' THEN amount_usd ELSE 0 END) as volume_usd,
+                COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
+                COUNT(CASE WHEN status='flagged' THEN 1 END) as flagged,
+                AVG(fraud_score) as avg_fraud
+                FROM ledger.transactions WHERE sender_id = :uid"""),
+        {"uid": user_id},
+    )
+    tx_stats = dict(tx_row.fetchone()._mapping)
+
+    disputes_row = await db.execute(
+        text("SELECT COUNT(*) as total FROM ledger.disputes WHERE raised_by = :uid"),
+        {"uid": user_id},
+    )
+    disputes = dict(disputes_row.fetchone()._mapping)
+
+    upi_row = await db.execute(
+        text("SELECT handle FROM core.upi_handles WHERE user_id = :uid AND is_primary = TRUE"),
+        {"uid": user_id},
+    )
+    upi = upi_row.fetchone()
+
+    u = dict(user._mapping)
+    u.pop("hashed_password", None)
+    u.pop("mfa_secret", None)
+
+    return {
+        "user":       u,
+        "wallets":    wallets,
+        "tx_stats":   tx_stats,
+        "disputes":   disputes,
+        "upi_handle": upi.handle if upi else None,
+    }
+
+
 @admin_router.get("/analytics")
 async def platform_analytics(
     current_user: CurrentUser = Depends(require_admin),
