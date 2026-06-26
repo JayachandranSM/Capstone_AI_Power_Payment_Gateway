@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
-import { LayoutDashboard, ShieldAlert, FileText, Search, Users, LogOut, Shield, TrendingUp } from 'lucide-react'
+import { LayoutDashboard, ShieldAlert, FileText, Search, Users, LogOut, Shield, TrendingUp, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
 
 const NAV = [
@@ -10,6 +10,7 @@ const NAV = [
   {to:'/admin/nlp',label:'NLP Lookup',icon:Search},
   {to:'/admin/users',label:'Users',icon:Users},
   {to:'/admin/analytics',label:'Analytics',icon:TrendingUp},
+  {to:'/admin/refunds',label:'Refunds',icon:RefreshCw},
 ]
 
 export default function AdminLayout() {

@@ -153,6 +153,46 @@ async def list_refunds(
         )
     return [dict(r._mapping) for r in rows.fetchall()]
 
+@refund_router.get("", response_model=None)
+async def list_refunds(
+    status: str = "all",
+    size: int = 50,
+    current_user: CurrentUser = Depends(require_any_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """List refunds — admin sees all, customer sees own."""
+    import json as _json
+    if current_user.role == "admin":
+        where = "WHERE 1=1" if status == "all" else f"WHERE r.status = '{status}'"
+        rows = await db.execute(
+            text(f"""
+                SELECT r.*, t.amount as tx_amount, t.currency as tx_currency
+                FROM ledger.refunds r
+                LEFT JOIN ledger.transactions t ON t.id = r.original_tx_id
+                {where}
+                ORDER BY r.created_at DESC LIMIT :size
+            """),
+            {"size": size},
+        )
+    else:
+        where = "AND r.status = :status" if status != "all" else ""
+        params = {"uid": current_user.user_id, "size": size}
+        if status != "all":
+            params["status"] = status
+        rows = await db.execute(
+            text(f"""
+                SELECT r.*, t.amount as tx_amount, t.currency as tx_currency
+                FROM ledger.refunds r
+                LEFT JOIN ledger.transactions t ON t.id = r.original_tx_id
+                WHERE r.requester_id = :uid {where}
+                ORDER BY r.created_at DESC LIMIT :size
+            """),
+            params,
+        )
+    items = [dict(r._mapping) for r in rows.fetchall()]
+    return {"items": items, "total": len(items)}
+
+
 @refund_router.patch("/{refund_id}/approve")
 async def approve_refund(
     refund_id: uuid.UUID,
@@ -172,13 +212,71 @@ async def approve_refund(
                 WHERE id=:id"""),
         {"uid": current_user.user_id, "id": refund_id},
     )
+
+    # ── Credit wallet back to customer ──────────────────────────
+    # Use direct UPDATE to avoid any ON CONFLICT issues
+    wallet_row = await db.execute(
+        text("SELECT id, balance FROM core.wallets WHERE user_id=:uid AND currency=:cur"),
+        {"uid": refund.requester_id, "cur": refund.currency},
+    )
+    wallet = wallet_row.fetchone()
+    if wallet:
+        new_balance = Decimal(str(wallet.balance)) + Decimal(str(refund.amount))
+        await db.execute(
+            text("""UPDATE core.wallets
+                    SET balance=:bal, version=version+1, updated_at=NOW()
+                    WHERE id=:wid"""),
+            {"bal": new_balance, "wid": wallet.id},
+        )
+    else:
+        # Create wallet if not exists
+        await db.execute(
+            text("""INSERT INTO core.wallets (user_id, currency, balance)
+                    VALUES (:uid, :cur, :amt)"""),
+            {"uid": refund.requester_id, "cur": refund.currency, "amt": refund.amount},
+        )
+
+    # ── Create refund transaction in ledger ─────────────────────
+    import uuid as _uuid
+    refund_tx_id = _uuid.uuid4()
+    await db.execute(
+        text("""
+            INSERT INTO ledger.transactions
+                (id, idempotency_key, sender_id, receiver_id,
+                 amount, currency, amount_usd, fx_rate,
+                 type, status, payment_method, metadata)
+            VALUES
+                (:id, :idem, :sender, :receiver,
+                 :amount, :currency, :amount_usd, :fx_rate,
+                 'refund', 'success', 'wallet', CAST(:meta AS jsonb))
+        """),
+        {
+            "id":         refund_tx_id,
+            "idem":       f"refund-{refund_id}",
+            "sender":     refund.requester_id,
+            "receiver":   refund.requester_id,
+            "amount":     refund.amount,
+            "currency":   refund.currency,
+            "amount_usd": refund.amount * Decimal("0.012") if refund.currency == "INR" else refund.amount,
+            "fx_rate":    Decimal("0.012") if refund.currency == "INR" else Decimal("1.0"),
+            "meta":       json.dumps({"original_tx_id": str(refund.original_tx_id), "refund_id": str(refund_id)}),
+        },
+    )
+
+    # Update refund with refund_tx_id
+    await db.execute(
+        text("UPDATE ledger.refunds SET refund_tx_id=:txid WHERE id=:id"),
+        {"txid": refund_tx_id, "id": refund_id},
+    )
+
+    # ── Notification to customer ─────────────────────────────────
     await db.execute(
         text("""INSERT INTO ops.notifications (user_id, type, title, body, metadata)
                 VALUES (:uid, 'refund', 'Refund Approved ✓', :body, CAST(:meta AS jsonb))"""),
         {
-            "uid": refund.requester_id,
-            "body": f"Your refund of {refund.amount} {refund.currency} has been approved",
-            "meta": json.dumps({"refund_id": str(refund_id)}),
+            "uid":  refund.requester_id,
+            "body": f"Your refund of {refund.amount} {refund.currency} has been credited to your wallet",
+            "meta": json.dumps({"refund_id": str(refund_id), "amount": float(refund.amount)}),
         },
     )
     await db.commit()
@@ -201,7 +299,7 @@ async def reject_refund(
          "uid": current_user.user_id, "id": refund_id},
     )
     await db.commit()
-    return {"message": "Refund rejected"}
+    return {"status": "rejected", "message": "Refund rejected", "id": str(refund_id)}
 
 # ── Disputes ──────────────────────────────────────────────────
 dispute_router = APIRouter(prefix="/disputes", tags=["Disputes"])

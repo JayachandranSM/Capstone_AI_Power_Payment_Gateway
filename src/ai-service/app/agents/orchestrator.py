@@ -223,7 +223,7 @@ Respond as JSON:
             text("""
                 UPDATE ledger.disputes
                 SET llm_analysis = :analysis,
-                    root_cause_rank = :ranking::jsonb,
+                    root_cause_rank = :ranking,
                     updated_at = NOW()
                 WHERE id = :did
             """),
