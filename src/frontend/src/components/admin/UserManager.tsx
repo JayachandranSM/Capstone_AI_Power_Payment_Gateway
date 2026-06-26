@@ -55,6 +55,15 @@ export default function UserManager() {
     } catch { toast.error('Failed to update KYC') }
   }
 
+  const changeRole = async (userId: string, newRole: string, userName: string) => {
+    if (!window.confirm(`Change ${userName} role to ${newRole}?`)) return
+    try {
+      const r = await axios.patch(`/api/v1/admin/users/${userId}/role`, { role: newRole })
+      toast.success(r.data.message)
+      setUsers(u => u.map(x => x.id === userId ? { ...x, role: newRole } : x))
+    } catch { toast.error('Failed to change role') }
+  }
+
   const loadSummary = async (userId: string) => {
     if (summary[userId]) {
       setExpanded(expanded === userId ? null : userId)
@@ -307,6 +316,25 @@ export default function UserManager() {
                                 </button>
                               ))}
                             </div>
+                          </div>
+
+                          {/* Role Change */}
+                          <div className="bg-white rounded-xl p-3 border border-slate-100 col-span-4 mt-1">
+                            <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Change Role</div>
+                            <div className="flex gap-2">
+                              {['customer','merchant','admin'].map(r => (
+                                <button key={r}
+                                  onClick={() => changeRole(u.id, r, u.full_name)}
+                                  className={`flex-1 text-xs px-3 py-2 rounded-lg border font-medium transition-colors ${
+                                    u.role === r
+                                      ? 'border-slate-800 bg-slate-800 text-white'
+                                      : 'border-slate-200 hover:bg-slate-50 text-slate-600'
+                                  }`}>
+                                  {r === u.role ? '● ' : ''}{r}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1.5">⚠️ Role changes take effect immediately and are audit logged</p>
                           </div>
                         </div>
                       </td>
