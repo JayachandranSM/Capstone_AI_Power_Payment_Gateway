@@ -98,7 +98,6 @@ async def call_llm(
                 {"role": "system", "content": system},
                 {"role": "user",   "content": prompt},
             ],
-            max_tokens=max_tokens,
             temperature=0.3,
         )
         if tools:
