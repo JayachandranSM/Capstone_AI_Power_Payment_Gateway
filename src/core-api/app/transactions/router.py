@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.security import CurrentUser, require_any_auth, require_admin
 from app.utils.logging import get_logger
 from db.session import get_db
+from db.redis_client import get_redis
+from app.utils.fx import get_fx_rate_live, FALLBACK_RATES
 
 log = get_logger(__name__)
 
@@ -247,6 +249,18 @@ async def raise_dispute(
         },
     )
     await db.commit()
+
+    # Async LLM analysis via AI service (non-blocking)
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                "http://ai-service:8001/api/ai/agents/resolve-dispute",
+                json={"dispute_id": str(dispute_id)},
+            )
+    except Exception:
+        pass  # Non-blocking — dispute saved regardless
+
     row = await db.execute(text("SELECT * FROM ledger.disputes WHERE id=:id"), {"id": dispute_id})
     return dict(row.fetchone()._mapping)
 
@@ -356,17 +370,26 @@ async def convert_currency(
     current_user: CurrentUser = Depends(require_any_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.payments.router import get_fx_rate
-    from_cur = payload["from_currency"]
-    to_cur   = payload["to_currency"]
-    amount   = Decimal(str(payload["amount"]))
-    rate     = await get_fx_rate(from_cur, to_cur, db)
+    from_cur  = payload["from_currency"]
+    to_cur    = payload["to_currency"]
+    amount    = Decimal(str(payload["amount"]))
+    try:
+        redis = await get_redis()
+        rate  = await get_fx_rate_live(from_cur, to_cur, redis)
+        source = "live"
+    except Exception:
+        from app.payments.router import get_fx_rate
+        rate   = await get_fx_rate(from_cur, to_cur, db)
+        source = "fallback"
     converted = amount * rate
     return {
-        "from_currency": from_cur, "to_currency": to_cur,
-        "original_amount": float(amount),
+        "from_currency":    from_cur,
+        "to_currency":      to_cur,
+        "original_amount":  float(amount),
         "converted_amount": round(float(converted), 4),
-        "fx_rate": float(rate),
+        "fx_rate":          float(rate),
+        "rate_source":      source,
+        "timestamp":        __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
     }
 
 # ── Notifications ─────────────────────────────────────────────

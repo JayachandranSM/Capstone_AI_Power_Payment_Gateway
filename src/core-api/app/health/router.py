@@ -182,6 +182,22 @@ async def list_users(
     )
     return [dict(r._mapping) for r in rows.fetchall()]
 
+@admin_router.get("/fraud-patterns")
+async def get_fraud_patterns(
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get fraud rule weights for feedback loop visibility."""
+    rows = await db.execute(
+        text("""
+            SELECT rule_name, weight, hit_count, false_positive, last_updated
+            FROM ai.fraud_patterns
+            ORDER BY hit_count DESC
+        """)
+    )
+    return [dict(r._mapping) for r in rows.fetchall()]
+
+
 @admin_router.get("/tickets")
 async def list_tickets(
     status: str = "open",

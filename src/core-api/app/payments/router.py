@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.security import CurrentUser, require_any_auth
 from app.utils.logging import get_logger
 from db.session import get_db
+from db.redis_client import get_redis
+from app.utils.fx import get_fx_rate_live
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 log = get_logger(__name__)
@@ -156,7 +158,12 @@ async def process_payment(
         raise HTTPException(status_code=400, detail=f"Insufficient balance. Available: {available} {currency}")
 
     # FX + fraud
-    fx_rate    = await get_fx_rate(currency, "USD", db)
+    # Try live FX rate first
+    try:
+        redis = await get_redis()
+        fx_rate = await get_fx_rate_live(currency, "USD", redis)
+    except Exception:
+        fx_rate = await get_fx_rate(currency, "USD", db)
     amount_usd = amount * fx_rate
     fraud_score, rules_hit = await run_fraud_engine(current_user.user_id, amount, currency, method, db)
     chargeback_prob = min(fraud_score * Decimal("0.4") + Decimal("0.02"), Decimal("1.0"))
