@@ -195,13 +195,12 @@ async def run_batch_evaluation(db: AsyncSession, sample_size: int = 20) -> dict:
     """
     log.info("batch_eval_started", sample_size=sample_size)
 
-    # Sample recent flagged transactions
+    # Sample recent transactions (any status for evaluation)
     rows = await db.execute(
         text("""
             SELECT t.id, t.fraud_score, t.failure_reason,
                    t.chargeback_flag, t.status, t.amount, t.currency
             FROM ledger.transactions t
-            WHERE t.status IN ('flagged','failed')
             ORDER BY t.created_at DESC
             LIMIT :n
         """),

@@ -228,7 +228,7 @@ async def raise_dispute(
     await db.execute(
         text("""INSERT INTO ledger.disputes
                 (id, transaction_id, raised_by, reason, evidence, priority)
-                VALUES (:id, :tid, :uid, :reason, :evidence`, :priority)"""),
+                VALUES (:id, :tid, :uid, :reason, :evidence, :priority)"""),
         {
             "id": dispute_id, "tid": payload["transaction_id"],
             "uid": current_user.user_id, "reason": payload["reason"],
@@ -241,11 +241,14 @@ async def raise_dispute(
     await db.execute(
         text("""INSERT INTO ops.tickets
                 (user_id, transaction_id, subject, description, category, priority)
-                VALUES (:uid, :tid, :subject, :desc, 'dispute'::ops.ticket_category, :priority::ops.ticket_priority)"""),
+                VALUES (:uid, :tid, :subject, :desc, :category, :priority)"""),
         {
-            "uid": current_user.user_id, "tid": payload["transaction_id"],
-            "subject": f"Dispute: {payload['reason'][:80]}",
-            "desc": payload["reason"], "priority": priority,
+            "uid":      current_user.user_id,
+            "tid":      payload["transaction_id"],
+            "subject":  f"Dispute: {payload['reason'][:80]}",
+            "desc":     payload["reason"],
+            "category": "dispute",
+            "priority": priority,
         },
     )
     await db.commit()
