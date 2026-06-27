@@ -129,7 +129,7 @@ async def request_refund(
                 VALUES (:uid, 'refund', 'Refund Requested', :body, CAST(:meta AS jsonb))"""),
         {
             "uid": current_user.user_id,
-            "body": f"Refund of {refund_amount} {tx.currency} is being reviewed",
+            "body": f"Refund of {float(refund_amount):,.2f} {tx.currency} is being reviewed",
             "meta": json.dumps({"refund_id": str(refund_id)}),
         },
     )
@@ -275,7 +275,7 @@ async def approve_refund(
                 VALUES (:uid, 'refund', 'Refund Approved ✓', :body, CAST(:meta AS jsonb))"""),
         {
             "uid":  refund.requester_id,
-            "body": f"Your refund of {refund.amount} {refund.currency} has been credited to your wallet",
+            "body": f"Your refund of {float(refund.amount):,.2f} {refund.currency} has been credited to your wallet",
             "meta": json.dumps({"refund_id": str(refund_id), "amount": float(refund.amount)}),
         },
     )

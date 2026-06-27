@@ -64,7 +64,7 @@ export default function DisputeManager() {
                   {agentResults[d.id]&&(
                     <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
                       <div className="flex items-center gap-2 mb-2"><Sparkles size={14} className="text-violet-600"/><span className="text-xs font-semibold text-violet-700">Dispute Agent Analysis</span></div>
-                      <div className="text-sm text-slate-700 mb-2">{agentResults[d.id].llm_analysis}</div>
+                      <div className="text-sm text-slate-700 mb-2">{agentResults[d.id].llm_analysis?.replace(/\*\*(.*?)\*\*/g, '$1').replace(/#{1,3} /g, '').replace(/\n\n/g, '\n')}</div>
                       <div className="text-xs font-semibold text-slate-600 mb-1">Root cause ranking:</div>
                       {agentResults[d.id].root_cause_ranking?.map((rc:any,i:number)=>(
                         <div key={i} className="text-xs text-slate-600 flex items-center gap-2 mb-0.5">
@@ -73,7 +73,7 @@ export default function DisputeManager() {
                           <span className="text-slate-400">— {rc.evidence}</span>
                         </div>
                       ))}
-                      <div className="mt-2 text-xs"><span className="font-semibold text-green-700">Recommended: </span>{agentResults[d.id].recommended_resolution?.replace('_',' ')}</div>
+                      <div className="mt-2 text-xs"><span className="font-semibold text-green-700">Recommended: </span>{agentResults[d.id].recommended_resolution?.replace(/_/g,' ').toUpperCase()}</div>
                     </div>
                   )}
                 </div>

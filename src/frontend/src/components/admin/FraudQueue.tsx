@@ -40,6 +40,8 @@ export default function FraudQueue() {
         rules_triggered: rules,
       })
       setAiExpl(prev => ({ ...prev, [alert.id]: r.data }))
+      // Auto-expand to show result
+      setExpanded(alert.id)
     } catch { toast.error('AI explanation unavailable') }
     finally { setAiLoad(null) }
   }
@@ -52,6 +54,7 @@ export default function FraudQueue() {
         transaction_id: alert.transaction_id,
       })
       setAgentRes(prev => ({ ...prev, [alert.id]: r.data }))
+      setExpanded(alert.id)
       toast.success('Agent analysis complete')
     } catch { toast.error('Agent unavailable') }
     finally { setAgentLoad(null) }
@@ -162,8 +165,9 @@ export default function FraudQueue() {
                       Run Agent
                     </button>
                     <button onClick={() => resolve(alert.id, 'false_positive')}
+                      title="Mark as false positive — reduces the triggering rule weight by 0.01 so future similar transactions are less likely to be flagged"
                       className="flex items-center gap-1 text-xs bg-green-50 border border-green-200 text-green-700 px-2.5 py-1.5 rounded-lg hover:bg-green-100">
-                      <CheckCircle size={11}/>Clear ↓weight
+                      <CheckCircle size={11}/>Clear (false positive)
                     </button>
                     <button onClick={() => resolve(alert.id, 'resolved')}
                       className="flex items-center gap-1 text-xs bg-red-50 border border-red-200 text-red-700 px-2.5 py-1.5 rounded-lg hover:bg-red-100">
@@ -206,7 +210,9 @@ export default function FraudQueue() {
                             Recommended: {aiExpl[alert.id].recommended_action?.toUpperCase()}
                           </span>
                         </div>
-                        <p className="text-sm text-slate-700 leading-relaxed">{aiExpl[alert.id].explanation}</p>
+                        <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+          {aiExpl[alert.id].explanation?.split('**').join('').split('###').join('').split('##').join('').split('#').join('').split('\n\n').join('\n')}
+        </p>
                       </div>
                     )}
 

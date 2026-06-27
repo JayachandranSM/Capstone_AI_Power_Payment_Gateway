@@ -1,3 +1,4 @@
+import DisputeRaise from './DisputeRaise'
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -10,6 +11,7 @@ const S: Record<string,string> = {
 const MI: Record<string,string> = { upi:'📱',card:'💳',bank_transfer:'🏦',wallet:'👜',neft:'🔄',rtgs:'🔄',imps:'⚡' }
 
 export default function TransactionList() {
+  const [disputeTx, setDisputeTx] = useState<any>(null)
   const [txns, setTxns] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [page,  setPage]  = useState(1)
@@ -33,6 +35,7 @@ export default function TransactionList() {
   useEffect(() => { fetch(1) }, [status, currency])
 
   return (
+    <>
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Transaction History</h1>
@@ -57,7 +60,7 @@ export default function TransactionList() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['Transaction','Method','Date','Amount','Status','Risk'].map(h=>(
+                {['Transaction','Method','Date','Amount','Status','Risk',''].map(h=>(
                   <th key={h} className={clsx('px-4 py-3 text-xs font-semibold text-slate-500 uppercase',
                     h==='Amount'||h==='Risk'?'text-right':'text-left')}>{h}</th>
                 ))}
@@ -92,6 +95,15 @@ export default function TransactionList() {
                       ? <span className="text-yellow-500 text-xs font-semibold flex items-center justify-end gap-1"><AlertTriangle size={12}/>{(tx.fraud_score*100).toFixed(0)}%</span>
                       : <span className="text-green-500 text-xs">{(tx.fraud_score*100).toFixed(0)}%</span>}
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    {tx.status === 'success' && (
+                      <button
+                        onClick={() => setDisputeTx(tx)}
+                        className="text-xs text-orange-500 hover:text-orange-600 border border-orange-200 hover:bg-orange-50 px-2 py-1 rounded-lg transition-colors">
+                        Dispute
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -108,5 +120,13 @@ export default function TransactionList() {
         )}
       </div>
     </div>
+    {disputeTx && (
+      <DisputeRaise
+        transaction={disputeTx}
+        onClose={() => setDisputeTx(null)}
+        onSuccess={() => setDisputeTx(null)}
+      />
+    )}
+    </>
   )
 }

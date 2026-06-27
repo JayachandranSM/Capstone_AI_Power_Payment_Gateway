@@ -282,7 +282,7 @@ async def process_payment(
         {
             "uid":   current_user.user_id,
             "title": notif_title,
-            "body":  f"{amount} {currency} {'sent' if tx_status=='success' else tx_status}",
+            "body":  f"{float(amount):,.2f} {currency} sent",
             "meta":  json.dumps({"transaction_id": str(tx_id), "sandbox_ref": sandbox_ref}),
         },
     )
@@ -292,6 +292,7 @@ async def process_payment(
 
     return {
         "transaction_id":       str(tx_id),
+        "idempotency_key":      idem_key,
         "status":               tx_status,
         "amount":               float(amount),
         "currency":             currency,

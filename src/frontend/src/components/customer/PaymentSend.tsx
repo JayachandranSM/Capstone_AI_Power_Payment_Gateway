@@ -20,10 +20,11 @@ export default function PaymentSend() {
   const [currency,setCur]    = useState('INR')
   const [method,  setMethod] = useState('upi')
   const [note,    setNote]   = useState('')
+  const [idemKey, setIdemKey] = useState(() => `pay-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
   const pay = async () => {
     setStep('processing')
-    const key = `pay-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const key = idemKey  // reuse same key — prevents duplicate on retry
     try {
       const res = await axios.post('/api/v1/payments/process',
         { idempotency_key:key, amount:parseFloat(amount), currency, payment_method:method, receiver_upi:upi||undefined },
@@ -51,9 +52,17 @@ export default function PaymentSend() {
           <div className="flex justify-between"><span className="text-slate-500">To</span><span>{upi}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">Ref</span><span className="font-mono text-xs">{result?.sandbox_ref}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">Risk</span><span>{(result?.fraud_score*100).toFixed(0)}%</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">TX ID</span><span className="font-mono text-xs">{result?.transaction_id?.slice(0,8).toUpperCase()}</span></div>
+          <div className="border-t border-slate-200 mt-2 pt-2">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400 text-xs">Idempotency Key</span>
+              <span className="font-mono text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded">{result?.idempotency_key || 'auto-generated'}</span>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">🔒 Duplicate protection — same key = same result, no double charge</p>
+          </div>
         </div>
         <div className="flex gap-3">
-          <button onClick={()=>{setStep('form');setAmount('');setNote('')}} className="flex-1 border border-slate-200 text-slate-700 rounded-xl py-3 text-sm font-medium">New Payment</button>
+          <button onClick={()=>{setStep('form');setAmount('');setNote('');setIdemKey(`pay-${Date.now()}-${Math.random().toString(36).slice(2)}`)}} className="flex-1 border border-slate-200 text-slate-700 rounded-xl py-3 text-sm font-medium">New Payment</button>
           <button onClick={()=>window.location.href='/customer/history'} className="flex-1 bg-blue-600 text-white rounded-xl py-3 text-sm font-medium">View History</button>
         </div>
       </div>
