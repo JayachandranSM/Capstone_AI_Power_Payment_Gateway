@@ -182,7 +182,7 @@ async def process_payment(
 
     tx_status = "success"
     failure_reason = None
-    if fraud_score >= Decimal("0.75"):
+    if fraud_score >= Decimal("0.45"):
         tx_status = "flagged"
         failure_reason = "Flagged by fraud detection system"
 
