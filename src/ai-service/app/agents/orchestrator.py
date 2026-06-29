@@ -110,37 +110,82 @@ class SettlementAgent(BaseAgent):
             return {"agent": self.name, "summary": "No transactions in last 30 days",
                     "forecast": 0, "anomalies": []}
 
-        stats_text = summarise_for_context(stats, max_tokens=500)
+        # Build prompt with REAL numbers directly — do not summarise
+        stats_lines = []
+        total_gross = 0.0
+        total_tx    = 0
+        total_cb    = 0
+        total_fail  = 0
+        for s in stats:
+            g   = float(s.get("gross") or 0)
+            cnt = int(s.get("tx_count") or 0)
+            cb  = int(s.get("chargebacks") or 0)
+            fl  = int(s.get("failed") or 0)
+            avg = float(s.get("avg_tx") or 0)
+            cur = s.get("currency","INR")
+            total_gross += g
+            total_tx    += cnt
+            total_cb    += cb
+            total_fail  += fl
+            fees_s  = round(g * 0.02, 2)
+            gst_s   = round(fees_s * 0.18, 2)
+            net_s   = round(g - fees_s - gst_s, 2)
+            stats_lines.append(
+                f"  Currency: {cur} | Transactions: {cnt} | Gross: {g:.2f} | "
+                f"Avg: {avg:.2f} | Chargebacks: {cb} | Failed: {fl} | "
+                f"Platform fee (2%): {fees_s:.2f} | GST (18% on fee): {gst_s:.2f} | Net: {net_s:.2f}"
+            )
 
-        prompt = f"""You are a settlement reconciliation agent. Analyze this merchant's 30-day data:
+        total_fees = round(total_gross * 0.02, 2)
+        total_gst  = round(total_fees * 0.18, 2)
+        total_net  = round(total_gross - total_fees - total_gst, 2)
+        forecast   = round(total_gross * 1.1, 2)
+        cb_rate    = round((total_cb / total_tx * 100), 2) if total_tx else 0
+        cb_risk    = "HIGH" if cb_rate > 2 else "MEDIUM" if cb_rate > 1 else "LOW"
 
-{stats_text}
+        stats_summary = "\n".join(stats_lines)
 
-Provide:
-1. Net settlement amount after 2% platform fee and 18% GST on fees
+        prompt = f"""You are a settlement reconciliation agent for a payment gateway. Analyze this merchant data:
+
+MERCHANT 30-DAY SETTLEMENT DATA:
+{stats_summary}
+
+TOTALS:
+  Total transactions: {total_tx}
+  Total gross revenue: {total_gross:.2f}
+  Total platform fee (2%): {total_fees:.2f}
+  Total GST (18% on fee): {total_gst:.2f}
+  Total net payout: {total_net:.2f}
+  Chargeback count: {total_cb} ({cb_rate}% rate) — Risk: {cb_risk}
+  Failed transactions: {total_fail}
+  Forecast next 30 days (+10% growth): {forecast:.2f}
+
+Generate a professional plain-English settlement summary explaining:
+1. How much the merchant earned and what was deducted
 2. Chargeback risk assessment
-3. Settlement forecast for next 30 days (based on trend)
-4. Any anomalies detected
-5. Recommended settlement date
+3. Revenue forecast for next 30 days
+4. Any anomalies or recommendations
 
-Respond as JSON:
-{{"gross":0,"fees":0,"tax":0,"net":0,"forecast_next_30":0,"chargeback_risk":"LOW","anomalies":[],"recommended_settlement_date":"2024-07-01","summary":"..."}}"""
+Respond ONLY as JSON (no markdown):
+{{"gross":{total_gross},"fees":{total_fees},"tax":{total_gst},"net":{total_net},"forecast_next_30":{forecast},"chargeback_risk":"{cb_risk}","anomalies":[],"recommended_settlement_date":"","summary":"..."}}"""
 
         raw = await call_llm(prompt, model="mini", max_tokens=400)
         try:
             clean = raw.replace("```json","").replace("```","").strip()
             result = json.loads(clean)
         except Exception:
-            gross = float(stats[0].get("gross") or 0)
-            fees  = gross * 0.02
-            tax   = fees  * 0.18
             result = {
-                "gross": gross, "fees": fees, "tax": tax,
-                "net": gross - fees - tax,
-                "forecast_next_30": gross * 1.05,
-                "chargeback_risk": "LOW",
+                "gross": total_gross, "fees": total_fees,
+                "tax": total_gst, "net": total_net,
+                "forecast_next_30": forecast,
+                "chargeback_risk": cb_risk,
                 "anomalies": [],
-                "summary": f"Processed {stats[0].get('tx_count',0)} transactions totaling {gross:.2f}",
+                "summary": (
+                    f"Processed {total_tx} transactions totalling {total_gross:.2f}. "
+                    f"Platform fee: {total_fees:.2f} (2%). GST: {total_gst:.2f} (18% on fee). "
+                    f"Net payout: {total_net:.2f}. Chargeback risk: {cb_risk}. "
+                    f"Forecast next 30 days: {forecast:.2f}."
+                ),
             }
 
         result["agent"]  = self.name
