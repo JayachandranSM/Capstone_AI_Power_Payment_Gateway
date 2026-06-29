@@ -505,3 +505,85 @@ async def platform_analytics(
     trend = [dict(r._mapping) for r in trend_rows.fetchall()]
 
     return {"summary": s, "currency_breakdown": currencies, "daily_trend": trend}
+
+
+@admin_router.get("/transactions")
+async def admin_list_transactions(
+    page: int = 1,
+    size: int = 20,
+    status: str = None,
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin view all transactions with filters."""
+    offset = (page - 1) * size
+    where  = "WHERE t.status = :status" if status else ""
+    params = {"limit": size, "offset": offset}
+    if status:
+        params["status"] = status
+    rows = await db.execute(
+        text(f"""
+            SELECT t.id, t.amount, t.currency, t.status, t.payment_method,
+                   t.fraud_score, t.failure_reason, t.created_at,
+                   u.full_name as sender_name, u.email as sender_email
+            FROM ledger.transactions t
+            JOIN core.users u ON u.id = t.sender_id
+            {where}
+            ORDER BY t.created_at DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        params,
+    )
+    items = [dict(r._mapping) for r in rows.fetchall()]
+    total_row = await db.execute(text("SELECT COUNT(*) FROM ledger.transactions"))
+    total = total_row.scalar()
+    return {"items": items, "total": total, "page": page, "size": size}
+
+
+@admin_router.get("/refunds")
+async def admin_list_refunds(
+    status: str = None,
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin view all refund requests."""
+    where  = "WHERE r.status = :status" if status else ""
+    params = {"status": status} if status else {}
+    rows = await db.execute(
+        text(f"""
+            SELECT r.id, r.original_tx_id as transaction_id, r.amount, r.currency,
+                   r.reason, r.status, r.created_at,
+                   u.full_name as customer_name, u.email as customer_email
+            FROM ledger.refunds r
+            JOIN core.users u ON u.id = r.requester_id
+            {where}
+            ORDER BY r.created_at DESC LIMIT 100
+        """),
+        params,
+    )
+    return [dict(r._mapping) for r in rows.fetchall()]
+
+@admin_router.get("/disputes")
+async def list_disputes(
+    status: str = None,
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all disputes with transaction and user details."""
+    query = """
+        SELECT d.id, d.transaction_id, d.raised_by, d.reason,
+               d.status, d.priority, d.created_at,
+               t.amount, t.currency, t.payment_method,
+               u.full_name as customer_name, u.email as customer_email
+        FROM ledger.disputes d
+        JOIN ledger.transactions t ON t.id = d.transaction_id
+        JOIN core.users u ON u.id = d.raised_by
+        {where}
+        ORDER BY d.created_at DESC LIMIT 100
+    """
+    where = "WHERE d.status = :status" if status else ""
+    query = query.format(where=where)
+    params = {"status": status} if status else {}
+    rows = await db.execute(text(query), params)
+    return [dict(r._mapping) for r in rows.fetchall()]
+

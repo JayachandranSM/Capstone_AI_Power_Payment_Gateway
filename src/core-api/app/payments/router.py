@@ -2,7 +2,7 @@ import uuid
 import json
 from decimal import Decimal
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import Request,  APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.security import CurrentUser, require_any_auth
@@ -101,6 +101,7 @@ async def run_fraud_engine(sender_id, amount, currency, method, db):
 
 @router.post("/process", status_code=201)
 async def process_payment(
+    request: Request,
     payload: dict,
     current_user: CurrentUser = Depends(require_any_auth),
     db: AsyncSession = Depends(get_db),
@@ -110,7 +111,7 @@ async def process_payment(
     amount   = Decimal(str(payload["amount"]))
     currency = payload["currency"]
     method   = payload["payment_method"]
-    idem_key = payload["idempotency_key"]
+    idem_key = payload.get("idempotency_key") or request.headers.get("X-Idempotency-Key") or str(__import__("uuid").uuid4())
 
     # Resolve receiver
     receiver_id  = None
@@ -118,6 +119,9 @@ async def process_payment(
 
     merchant_id_resolved = None
 
+    # Accept both field names for UPI handle
+    if not payload.get("receiver_upi") and payload.get("upi_handle"):
+        payload["receiver_upi"] = payload["upi_handle"]
     if payload.get("receiver_upi"):
         row = await db.execute(
             text("SELECT user_id FROM core.upi_handles WHERE handle=:h AND is_active=TRUE"),
