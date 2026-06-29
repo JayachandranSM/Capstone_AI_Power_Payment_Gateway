@@ -99,11 +99,8 @@ async def merchant_settlements(
     merchant = m_row.fetchone()
     if not merchant:
         raise HTTPException(status_code=404, detail="Merchant not found")
-    rows = await db.execute(
-        text("SELECT * FROM ledger.settlements WHERE merchant_id=:mid ORDER BY created_at DESC LIMIT 20"),
-        {"mid": merchant.id},
-    )
-    # Also update existing p2p transactions to set merchant_id for Raj's UPI
+
+    # Update p2p transactions to merchant_payment type
     await db.execute(
         text("""UPDATE ledger.transactions
                 SET merchant_id = :mid, type = 'merchant_payment'
@@ -113,7 +110,96 @@ async def merchant_settlements(
         {"mid": merchant.id, "uid": current_user.user_id},
     )
     await db.commit()
-    return [dict(r._mapping) for r in rows.fetchall()]
+
+    # Calculate settlements dynamically from actual transactions
+    # Group by week (last 8 weeks)
+    weekly = await db.execute(
+        text("""
+            SELECT
+                date_trunc('week', created_at) as week_start,
+                date_trunc('week', created_at) + INTERVAL '7 days' as week_end,
+                currency,
+                COUNT(*) as tx_count,
+                ROUND(SUM(CASE WHEN status='success' THEN amount ELSE 0 END)::numeric, 2) as gross_amount,
+                COUNT(CASE WHEN status='failed' THEN 1 END) as failed_count,
+                COUNT(CASE WHEN chargeback_flag THEN 1 END) as chargebacks
+            FROM ledger.transactions
+            WHERE merchant_id = :mid
+            AND created_at > NOW() - INTERVAL '8 weeks'
+            GROUP BY date_trunc('week', created_at), currency
+            ORDER BY week_start DESC
+            LIMIT 12
+        """),
+        {"mid": merchant.id},
+    )
+    weekly_rows = weekly.fetchall()
+
+    # Also get pre-seeded settlements from table
+    seeded = await db.execute(
+        text("SELECT * FROM ledger.settlements WHERE merchant_id=:mid ORDER BY created_at DESC LIMIT 10"),
+        {"mid": merchant.id},
+    )
+    seeded_rows = [dict(r._mapping) for r in seeded.fetchall()]
+
+    # Build dynamic settlement records from actual transactions
+    dynamic = []
+    for row in weekly_rows:
+        r = dict(row._mapping)
+        gross   = float(r.get("gross_amount") or 0)
+        tx_cnt  = int(r.get("tx_count") or 0)
+        cur     = r.get("currency", "INR")
+        fees    = round(gross * 0.02, 2)
+        gst     = round(fees * 0.18, 2)
+        net     = round(gross - fees - gst, 2)
+        w_start = r.get("week_start")
+        w_end   = r.get("week_end")
+        failed  = int(r.get("failed_count") or 0)
+        cb      = int(r.get("chargebacks") or 0)
+
+        if gross == 0 and tx_cnt == 0:
+            continue
+
+        dynamic.append({
+            "id":           str(hash(f"{merchant.id}{w_start}{cur}"))[:8].replace("-",""),
+            "merchant_id":  str(merchant.id),
+            "period_start": w_start.isoformat() if w_start else None,
+            "period_end":   w_end.isoformat() if w_end else None,
+            "gross_amount": gross,
+            "fees":         fees,
+            "tax":          gst,
+            "net_amount":   net,
+            "currency":     cur,
+            "status":       "settled",
+            "tx_count":     tx_cnt,
+            "failed_count": failed,
+            "chargebacks":  cb,
+            "summary_ai": (
+                f"Week {w_start.strftime('%d %b') if w_start else ''} — "
+                f"{w_end.strftime('%d %b %Y') if w_end else ''}. "
+                f"Gross: {cur} {gross:,.2f} across {tx_cnt} transactions. "
+                f"Platform fee (2%): {fees:,.2f}. GST (18% on fee): {gst:,.2f}. "
+                f"Net payout: {net:,.2f}."
+                + (f" Failed: {failed}." if failed else "")
+                + (f" Chargebacks: {cb}." if cb else "")
+            ),
+            "forecast_next": round(gross * 1.1, 2),
+            "created_at":   w_start.isoformat() if w_start else None,
+            "settled_at":   w_end.isoformat() if w_end else None,
+            "source":       "dynamic",
+        })
+
+    # Merge dynamic + seeded settlements, dynamic takes priority
+    # Use seeded records to fill in historical weeks not in dynamic
+    seen_periods = {(s.get("period_start","")[:10], s.get("currency","")) for s in dynamic}
+    for s in seeded_rows:
+        key = (str(s.get("period_start",""))[:10], s.get("currency",""))
+        if key not in seen_periods:
+            dynamic.append(s)
+            seen_periods.add(key)
+
+    # Sort by period_start descending
+    dynamic.sort(key=lambda x: str(x.get("period_start") or ""), reverse=True)
+    return dynamic if dynamic else seeded_rows
 
 # ── Admin ─────────────────────────────────────────────────────
 admin_router = APIRouter(prefix="/admin", tags=["Admin"])
