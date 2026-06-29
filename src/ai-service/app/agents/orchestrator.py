@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.llm_client import call_llm, PAYMENT_TOOLS, summarise_for_context
+from app.llm_client import call_llm, PAYMENT_TOOLS, summarise_for_context, strip_markdown
 import structlog
 
 log = structlog.get_logger(__name__)

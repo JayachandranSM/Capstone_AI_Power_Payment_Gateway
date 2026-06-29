@@ -223,7 +223,7 @@ export default function FraudQueue() {
                           <Sparkles size={14} className="text-blue-600"/>
                           <span className="text-xs font-semibold text-blue-700">Multi-Agent Analysis</span>
                         </div>
-                        <p className="text-sm text-slate-700 mb-2">{agentRes[alert.id].final_synthesis}</p>
+                        <p className="text-sm text-slate-700 mb-2">{(agentRes[alert.id].final_synthesis || '').split('**').join('').split('***').join('').split('###').join('').split('##').join('').split('# ').join('').split('`').join('').replace(/\n\n+/g, '\n').trim()}</p>
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div className="bg-white rounded-lg p-2">
                             <div className="font-semibold text-slate-600 mb-1">Fraud Agent</div>

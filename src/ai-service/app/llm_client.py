@@ -19,6 +19,20 @@ log      = structlog.get_logger(__name__)
 
 _client: AzureOpenAI | None = None
 
+def strip_markdown(text: str) -> str:
+    """Remove markdown formatting for human-readable output."""
+    if not text:
+        return text
+    import re
+    text = re.sub(r"\*{1,3}(.*?)\*{1,3}", r"\1", text)   # bold/italic
+    text = re.sub(r"#{1,6}\s+", "", text)                   # headers
+    text = re.sub(r"`{1,3}[^`]*`{1,3}", "", text)           # code
+    text = re.sub(r"
+{3,}", "\n\n", text)                # excess newlines
+    text = re.sub(r"^\s*[-*]\s+", "• ", text, flags=re.M)  # bullets → •
+    return text.strip()
+
+
 def get_client() -> AzureOpenAI:
     global _client
     if _client is None:

@@ -54,7 +54,7 @@ export default function NLPLookup() {
       {toolResult&&!toolLoad&&(
         <div className="bg-white rounded-2xl border border-violet-200 p-5">
           <div className="flex items-center gap-2 mb-3"><Zap size={16} className="text-violet-600"/><span className="font-semibold text-slate-800">Tool Call Result</span>{toolResult.tool_used&&<span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">{toolResult.tool_used}</span>}</div>
-          <p className="text-sm text-slate-700 mb-3 leading-relaxed">{toolResult.answer}</p>
+          <p className="text-sm text-slate-700 mb-3 leading-relaxed">{(toolResult.answer || '').split('**').join('').split('***').join('').split('###').join('').split('##').join('').split('# ').join('').split('`').join('').replace(/\n\n+/g, '\n').trim()}</p>
           {toolResult.tool_result&&<pre className="bg-slate-50 rounded-xl p-3 text-xs text-slate-600 overflow-auto">{JSON.stringify(toolResult.tool_result,null,2)}</pre>}
         </div>
       )}
@@ -65,7 +65,7 @@ export default function NLPLookup() {
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-slate-100 p-5">
             <div className="flex items-center gap-2 mb-3"><Sparkles size={16} className="text-violet-600"/><span className="font-semibold text-slate-800">AI Analysis</span><span className="text-xs text-slate-400">Confidence: {(result.confidence*100).toFixed(0)}%</span></div>
-            <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{result.answer}</p>
+            <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{(result.answer || '').split('**').join('').split('***').join('').split('###').join('').split('##').join('').split('# ').join('').split('`').join('').replace(/\n\n+/g, '\n').trim()}</p>
             {result.escalation_needed&&<div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">⚠️ Escalation recommended: {result.escalation_reason}</div>}
           </div>
           {result.fix_suggestions?.length>0&&(

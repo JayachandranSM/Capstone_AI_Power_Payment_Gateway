@@ -104,7 +104,14 @@ export default function AISupportChat() {
                   ? 'bg-slate-50 text-slate-800 rounded-tl-none'
                   : 'bg-blue-600 text-white rounded-tr-none'
               )}>
-                {m.text}
+                {m.text
+  .split('**').join('')
+  .split('###').join('')
+  .split('##').join('')
+  .split('# ').join('')
+  .split('\n\n').join('\n')
+  .trim()
+}
               </div>
               {m.confidence != null && (
                 <div className="flex items-center gap-1 text-xs text-slate-400">

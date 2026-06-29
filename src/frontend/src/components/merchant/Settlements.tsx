@@ -75,7 +75,7 @@ export default function Settlements() {
             <span className="font-semibold text-violet-800 text-sm">AI Settlement Analysis</span>
             <span className="text-xs text-violet-400 ml-auto">Powered by Azure OpenAI</span>
           </div>
-          <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{aiSummary}</p>
+          <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{(aiSummary || '').split('**').join('').split('***').join('').split('###').join('').split('##').join('').split('# ').join('').split('`').join('').replace(/\n\n+/g, '\n').trim()}</p>
         </div>
       )}
 
@@ -136,7 +136,7 @@ export default function Settlements() {
               {/* AI note if available */}
               {s.summary_ai && (
                 <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500 italic">
-                  {s.summary_ai}
+                  {(s.summary_ai || '').split('**').join('').split('***').join('').split('###').join('').split('##').join('').split('# ').join('').split('`').join('').replace(/\n\n+/g, '\n').trim()}
                 </div>
               )}
             </div>
