@@ -55,7 +55,7 @@ export default function NLPLookup() {
         <div className="bg-white rounded-2xl border border-violet-200 p-5">
           <div className="flex items-center gap-2 mb-3"><Zap size={16} className="text-violet-600"/><span className="font-semibold text-slate-800">Tool Call Result</span>{toolResult.tool_used&&<span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">{toolResult.tool_used}</span>}</div>
           <p className="text-sm text-slate-700 mb-3 leading-relaxed">{(toolResult.answer || '').split('**').join('').split('***').join('').split('###').join('').split('##').join('').split('# ').join('').split('`').join('').replace(/\n\n+/g, '\n').trim()}</p>
-          {toolResult.tool_result&&<pre className="bg-slate-50 rounded-xl p-3 text-xs text-slate-600 overflow-auto">{JSON.stringify(toolResult.tool_result,null,2)}</pre>}
+          {toolResult.tool_result?.count && <p className="text-xs text-slate-400 mt-2">{toolResult.tool_result.count} records analysed from database.</p>}
         </div>
       )}
 
