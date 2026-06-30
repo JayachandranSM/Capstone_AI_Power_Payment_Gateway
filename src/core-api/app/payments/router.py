@@ -270,8 +270,8 @@ async def process_payment(
                 {"tx": tx_id, "wid": rw.id, "amt": amount, "cur": currency, "bal": rw.balance},
             )
 
-    # Fraud alert
-    if fraud_score >= Decimal("0.5"):
+    # Fraud alert — uses SAME threshold as flagging (0.45) to avoid mismatch
+    if fraud_score >= Decimal("0.45"):
         severity = ("critical" if fraud_score >= Decimal("0.85") else
                     "high"     if fraud_score >= Decimal("0.70") else "medium")
         await db.execute(
