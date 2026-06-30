@@ -226,7 +226,7 @@ class DisputeAgent(BaseAgent):
         prompt = f"""You are a dispute resolution agent. Analyze this dispute:
 
 Customer: {d.get('customer_name')}
-Transaction: {d.get('currency')} {d.get('amount')} via {d.get('payment_method')}
+Transaction: {d.get('currency')} {float(d.get('amount') or 0):.2f} via {d.get('payment_method')}
 Fraud Score: {d.get('fraud_score')}
 Dispute Reason: {d.get('reason')}
 

@@ -15,6 +15,7 @@ export default function DisputeManager() {
   useEffect(()=>{ axios.get('/api/v1/disputes').then(r=>setD(r.data||[])).finally(()=>setL(false)) },[])
 
   const runAgent = async (dispute:any) => {
+    setE(dispute.id)
     if (agentResults[dispute.id]) return
     setAL(dispute.id)
     try {
