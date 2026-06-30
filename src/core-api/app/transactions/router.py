@@ -407,6 +407,19 @@ async def resolve_dispute(
     new_status   = payload.get("status", "resolved_customer")
     resolution   = payload.get("resolution", "")
 
+    # Fetch dispute + original transaction details BEFORE updating status
+    d_row = await db.execute(
+        text("""
+            SELECT d.raised_by, d.reason, d.transaction_id,
+                   t.amount, t.currency
+            FROM ledger.disputes d
+            JOIN ledger.transactions t ON t.id = d.transaction_id
+            WHERE d.id = :id
+        """),
+        {"id": dispute_id},
+    )
+    dispute = d_row.fetchone()
+
     await db.execute(
         text("""UPDATE ledger.disputes
                 SET status=:status, resolution=:resolution, updated_at=NOW()
@@ -414,30 +427,92 @@ async def resolve_dispute(
         {"status": new_status, "resolution": resolution, "id": dispute_id},
     )
 
-    # Fetch dispute to find who raised it, for the notification
-    d_row = await db.execute(
-        text("SELECT raised_by, reason FROM ledger.disputes WHERE id=:id"),
-        {"id": dispute_id},
-    )
-    dispute = d_row.fetchone()
+    refunded_amount = None
+
+    # If resolved in customer's favor, actually credit the wallet in the SAME currency
+    if dispute and new_status == "resolved_customer":
+        wallet_row = await db.execute(
+            text("SELECT id, balance FROM core.wallets WHERE user_id=:uid AND currency=:cur"),
+            {"uid": dispute.raised_by, "cur": dispute.currency},
+        )
+        wallet = wallet_row.fetchone()
+        if wallet:
+            new_balance = Decimal(str(wallet.balance)) + Decimal(str(dispute.amount))
+            await db.execute(
+                text("""UPDATE core.wallets
+                        SET balance=:bal, version=version+1, updated_at=NOW()
+                        WHERE id=:wid"""),
+                {"bal": new_balance, "wid": wallet.id},
+            )
+        else:
+            await db.execute(
+                text("""INSERT INTO core.wallets (user_id, currency, balance)
+                        VALUES (:uid, :cur, :amt)"""),
+                {"uid": dispute.raised_by, "cur": dispute.currency, "amt": dispute.amount},
+            )
+
+        # Create a ledger transaction for this dispute-resolution credit (double-entry trail)
+        dispute_tx_id = uuid.uuid4()
+        amount_usd = dispute.amount * Decimal("0.012") if dispute.currency == "INR" else dispute.amount
+        fx_rate    = Decimal("0.012") if dispute.currency == "INR" else Decimal("1.0")
+        await db.execute(
+            text("""
+                INSERT INTO ledger.transactions
+                    (id, idempotency_key, sender_id, receiver_id,
+                     amount, currency, amount_usd, fx_rate,
+                     type, status, payment_method, metadata)
+                VALUES
+                    (:id, :idem, :uid, :uid,
+                     :amount, :currency, :amount_usd, :fx_rate,
+                     'reversal', 'success', 'wallet', CAST(:meta AS jsonb))
+            """),
+            {
+                "id":         dispute_tx_id,
+                "idem":       f"dispute-resolve-{dispute_id}",
+                "uid":        dispute.raised_by,
+                "amount":     dispute.amount,
+                "currency":   dispute.currency,
+                "amount_usd": amount_usd,
+                "fx_rate":    fx_rate,
+                "meta":       json.dumps({
+                    "original_tx_id": str(dispute.transaction_id),
+                    "dispute_id": str(dispute_id),
+                }),
+            },
+        )
+        refunded_amount = float(dispute.amount)
 
     if dispute:
-        status_label = "resolved in your favor" if new_status == "resolved_customer" else \
-                       "resolved in the merchant's favor" if new_status == "resolved_merchant" else \
-                       new_status.replace("_", " ")
+        if new_status == "resolved_customer":
+            status_label = "resolved in your favor"
+        elif new_status == "resolved_merchant":
+            status_label = "resolved in the merchant's favor"
+        else:
+            status_label = new_status.replace("_", " ")
+
+        body = f"Your dispute ('{dispute.reason}') has been {status_label}."
+        if refunded_amount is not None:
+            body += f" {refunded_amount:,.2f} {dispute.currency} has been credited to your {dispute.currency} wallet."
+        if resolution:
+            body += f" Note: {resolution}"
+
         await db.execute(
             text("""INSERT INTO ops.notifications (user_id, type, title, body, metadata)
                     VALUES (:uid, 'dispute', 'Dispute Resolved', :body, CAST(:meta AS jsonb))"""),
             {
                 "uid":  dispute.raised_by,
-                "body": f"Your dispute ('{dispute.reason}') has been {status_label}."
-                        + (f" Note: {resolution}" if resolution else ""),
-                "meta": json.dumps({"dispute_id": str(dispute_id), "status": new_status}),
+                "body": body,
+                "meta": json.dumps({
+                    "dispute_id": str(dispute_id),
+                    "status": new_status,
+                    "refunded_amount": refunded_amount,
+                    "currency": dispute.currency if dispute else None,
+                }),
             },
         )
 
     await db.commit()
-    return {"message": f"Dispute {new_status}"}
+    return {"message": f"Dispute {new_status}", "wallet_credited": refunded_amount is not None}
 
 # ── Wallets ───────────────────────────────────────────────────
 wallet_router = APIRouter(prefix="/wallets", tags=["Wallets"])
