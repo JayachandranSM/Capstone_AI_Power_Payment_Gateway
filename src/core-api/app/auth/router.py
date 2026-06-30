@@ -11,6 +11,7 @@ from app.auth.security import (
 )
 from app.config import get_settings
 from app.utils.logging import get_logger
+from db.redis_client import get_redis
 from db.session import get_db
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -78,15 +79,48 @@ async def signup(payload: dict, db: AsyncSession = Depends(get_db)):
     u.pop("mfa_secret", None)
     return u
 
+# ── Account lockout guardrail ───────────────────────────────
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_SECONDS     = 900   # 15 minutes
+
 @router.post("/login")
 async def login(payload: dict, db: AsyncSession = Depends(get_db)):
+    email = payload.get("email", "")
+    redis = await get_redis()
+    lock_key = f"login_lock:{email}"
+    fail_key = f"login_fails:{email}"
+
+    # Check if account is currently locked
+    is_locked = await redis.get(lock_key)
+    if is_locked:
+        ttl = await redis.ttl(lock_key)
+        minutes_left = max(1, ttl // 60)
+        raise HTTPException(
+            status_code=429,
+            detail=f"Account temporarily locked due to repeated failed login attempts. Try again in {minutes_left} minute(s).",
+        )
+
     row = await db.execute(
         text("SELECT * FROM core.users WHERE email = :email AND is_active = TRUE"),
         {"email": payload["email"]},
     )
     user = row.fetchone()
     if not user or not verify_password(payload["password"], user.hashed_password):
+        # Track failed attempt
+        fails = await redis.incr(fail_key)
+        await redis.expire(fail_key, LOCKOUT_SECONDS)
+        if fails >= MAX_FAILED_ATTEMPTS:
+            await redis.set(lock_key, "1", ex=LOCKOUT_SECONDS)
+            await redis.delete(fail_key)
+            log.warning("account_locked", email=email, attempts=fails)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many failed attempts. Account locked for 15 minutes.",
+            )
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Successful credential check — clear any failed attempt counter
+    await redis.delete(fail_key)
 
     if user.mfa_enabled:
         if not payload.get("totp_code"):
