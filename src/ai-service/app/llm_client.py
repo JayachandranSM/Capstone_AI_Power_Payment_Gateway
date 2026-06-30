@@ -88,6 +88,39 @@ def summarise_for_context(items: list[dict], max_tokens: int = 2000) -> str:
             break
     return "\n".join(lines)
 
+# ── Prompt injection guardrail ──────────────────────────────
+PROMPT_INJECTION_PATTERNS = [
+    "ignore previous instructions",
+    "ignore all previous instructions",
+    "ignore the above",
+    "disregard previous",
+    "disregard all previous",
+    "forget your instructions",
+    "forget everything above",
+    "you are now",
+    "act as if",
+    "system prompt",
+    "reveal your prompt",
+    "reveal your system prompt",
+    "what are your instructions",
+    "print your instructions",
+    "developer mode",
+    "jailbreak",
+    "do anything now",
+    "bypass your",
+    "override your",
+    "new instructions:",
+    "</system>",
+    "<|im_start|>",
+]
+
+def detect_prompt_injection(text: str) -> bool:
+    """Detect common prompt injection patterns in user input."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(pattern in lower for pattern in PROMPT_INJECTION_PATTERNS)
+
 # ── Core LLM call ─────────────────────────────────────────────
 async def call_llm(
     prompt: str,
@@ -96,6 +129,14 @@ async def call_llm(
     max_tokens: int = 512,
     tools: list | None = None,
 ) -> str:
+    # Guardrail: block prompt injection attempts before reaching the LLM
+    if detect_prompt_injection(prompt):
+        return (
+            "I can only help with payment-related questions such as "
+            "transaction status, fraud explanations, refunds, and settlements. "
+            "I'm not able to follow instructions that try to change my role or behavior."
+        )
+
     deployment = (
         settings.azure_openai_chat_deployment
         if model == "mini"
