@@ -250,7 +250,7 @@ Provide a helpful, structured answer with:
 
 Be concise and specific."""
 
-    answer = await call_llm(prompt, model="mini", max_tokens=500)
+    answer = await call_llm(prompt, model="mini", max_tokens=500, current_query=query)
 
     if not answer or answer.startswith("[LLM"):
         # Fallback answer from context

@@ -121,6 +121,34 @@ def detect_prompt_injection(text: str) -> bool:
     lower = text.lower()
     return any(pattern in lower for pattern in PROMPT_INJECTION_PATTERNS)
 
+# ── Off-topic / scope guardrail ──────────────────────────────
+OFF_TOPIC_KEYWORDS = [
+    "chief minister", "prime minister", "president of", "governor of",
+    "election", "political party", "who is the mayor",
+    "weather in", "weather today", "temperature today",
+    "what is the capital of", "stock price of", "share price of",
+    "cricket score", "football score", "movie review",
+    "recipe for", "how to cook", "translate this to",
+    "write me a poem", "write a poem", "write a story",
+    "tell me a joke", "knock knock",
+    "what is your name", "are you a human", "are you conscious",
+    "what is the meaning of life", "who created you",
+]
+
+OUT_OF_SCOPE_MESSAGE = (
+    "I'm a payment support assistant, so I can only help with payment-related "
+    "questions — things like transaction status, fraud explanations, refunds, "
+    "disputes, and settlements. For anything outside that, please use a "
+    "general-purpose search engine or assistant."
+)
+
+def detect_off_topic(text: str) -> bool:
+    """Detect questions clearly outside the payment-support domain."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(kw in lower for kw in OFF_TOPIC_KEYWORDS)
+
 # ── Core LLM call ─────────────────────────────────────────────
 async def call_llm(
     prompt: str,
@@ -128,14 +156,34 @@ async def call_llm(
     model: str = "mini",
     max_tokens: int = 512,
     tools: list | None = None,
+    current_query: str | None = None,
 ) -> str:
+    # Guardrails check ONLY the current user query, not full prompt/history,
+    # so old off-topic turns in conversation history don't poison new questions.
+    check_text = current_query if current_query is not None else prompt
+
     # Guardrail: block prompt injection attempts before reaching the LLM
-    if detect_prompt_injection(prompt):
+    if detect_prompt_injection(check_text):
         return (
             "I can only help with payment-related questions such as "
             "transaction status, fraud explanations, refunds, and settlements. "
             "I'm not able to follow instructions that try to change my role or behavior."
         )
+
+    # Guardrail: block clearly off-topic questions (politics, weather, etc.)
+    if detect_off_topic(check_text):
+        return OUT_OF_SCOPE_MESSAGE
+
+    # Reinforce scope boundary in every system prompt, regardless of caller
+    system = (
+        system
+        + " You only answer questions related to payments, transactions, fraud, "
+        "refunds, disputes, settlements, and merchant operations on this platform. "
+        "If a question is unrelated to payments (e.g. politics, weather, general "
+        "trivia, personal opinions), politely decline and redirect the user back "
+        "to payment-related topics. Do not answer general knowledge questions "
+        "even if you know the answer."
+    )
 
     deployment = (
         settings.azure_openai_chat_deployment
