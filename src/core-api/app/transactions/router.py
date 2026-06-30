@@ -404,13 +404,38 @@ async def resolve_dispute(
     current_user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    new_status = payload.get("status", "resolved_customer")
+    new_status   = payload.get("status", "resolved_customer")
+    resolution   = payload.get("resolution", "")
+
     await db.execute(
         text("""UPDATE ledger.disputes
                 SET status=:status, resolution=:resolution, updated_at=NOW()
                 WHERE id=:id"""),
-        {"status": new_status, "resolution": payload.get("resolution", ""), "id": dispute_id},
+        {"status": new_status, "resolution": resolution, "id": dispute_id},
     )
+
+    # Fetch dispute to find who raised it, for the notification
+    d_row = await db.execute(
+        text("SELECT raised_by, reason FROM ledger.disputes WHERE id=:id"),
+        {"id": dispute_id},
+    )
+    dispute = d_row.fetchone()
+
+    if dispute:
+        status_label = "resolved in your favor" if new_status == "resolved_customer" else \
+                       "resolved in the merchant's favor" if new_status == "resolved_merchant" else \
+                       new_status.replace("_", " ")
+        await db.execute(
+            text("""INSERT INTO ops.notifications (user_id, type, title, body, metadata)
+                    VALUES (:uid, 'dispute', 'Dispute Resolved', :body, CAST(:meta AS jsonb))"""),
+            {
+                "uid":  dispute.raised_by,
+                "body": f"Your dispute ('{dispute.reason}') has been {status_label}."
+                        + (f" Note: {resolution}" if resolution else ""),
+                "meta": json.dumps({"dispute_id": str(dispute_id), "status": new_status}),
+            },
+        )
+
     await db.commit()
     return {"message": f"Dispute {new_status}"}
 
